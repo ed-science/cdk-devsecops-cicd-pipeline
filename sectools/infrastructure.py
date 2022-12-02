@@ -95,8 +95,8 @@ class SecTools(cdk.Stack):
             security_groups=[self.sg]
         )
 
-        rds_url = 'jdbc:postgresql://{}/sonarqube'.format(
-            self.database.db_instance_endpoint_address)
+        rds_url = f'jdbc:postgresql://{self.database.db_instance_endpoint_address}/sonarqube'
+
 
         # Addins SG rule allowing access to DB from VPC
         self.sg.add_ingress_rule(

@@ -25,7 +25,7 @@ def setup_s3_client(job_data):
     key_id = job_data['artifactCredentials']['accessKeyId']
     key_secret = job_data['artifactCredentials']['secretAccessKey']
     session_token = job_data['artifactCredentials']['sessionToken']
-    
+
     session = Session(aws_access_key_id=key_id,
         aws_secret_access_key=key_secret,
         aws_session_token=session_token)
@@ -35,7 +35,7 @@ def get_scan_results(s3, scan_report_s3_location):
     tmp_file = tempfile.NamedTemporaryFile()
     bucket = scan_report_s3_location['bucketName']
     key = scan_report_s3_location['objectKey']
-    
+
     scan_results = {}
 
     with tempfile.NamedTemporaryFile() as tmp_file:
@@ -122,15 +122,13 @@ def process_sonar_message(sonar_message, job_id):
         finding_id = f"{issue['hash']}-sonarqube-codepipeline-{job_id}"
         finding_description = f"{issue['type']}: {issue['message']}. Component: {issue['component']}. Issue ID: {issue['hash']}"
         report_severity = issue['severity']
-        if report_severity == 'MAJOR':
+        if report_severity in ['BLOCKER', 'CRITICAL']:
+            normalized_severity = 90
+        elif report_severity == 'MAJOR':
             normalized_severity = 70
-        elif report_severity == 'BLOCKER':
-            normalized_severity = 90
-        elif report_severity == 'CRITICAL':
-            normalized_severity = 90
         else:
             normalized_severity= 20
-        
+
         sonar_findings.append(build_security_hub_finding(
             account_id=account_id,
             region=region,
@@ -199,7 +197,7 @@ def handler(event, context):
         artifacts = job_data['inputArtifacts']
 
         s3 = setup_s3_client(job_data)
-        
+
         securityhub_findings = []
 
         for artifact in artifacts:
@@ -215,7 +213,7 @@ def handler(event, context):
                         job_id
                     )
                 )
-            
+
             if "owasp_dependency_check_result.json" in scan_results:
                 securityhub_findings.extend(
                     process_dependency_check_message(
@@ -223,7 +221,7 @@ def handler(event, context):
                         job_id
                     )
                 )
-                
+
             if "owasp_zap_result.json" in scan_results:
                 securityhub_findings.extend(
                     process_zap_message(
@@ -234,18 +232,19 @@ def handler(event, context):
 
         response = securityhub.batch_import_findings(Findings=securityhub_findings)
         if response['FailedCount'] > 0:
-            raise Exception("Failed to import finding: {}".format(response['FailedCount']))
+            raise Exception(f"Failed to import finding: {response['FailedCount']}")
 
         code_pipeline.put_job_success_result(jobId=job_id)
 
     except Exception as e:
         traceback.print_exc()
         code_pipeline.put_job_failure_result(
-            jobId=job_id, 
+            jobId=job_id,
             failureDetails={
-                'message': 'Function exception: ' + str(e), 
-                'type': 'JobFailed'
-            }
+                'message': f'Function exception: {str(e)}',
+                'type': 'JobFailed',
+            },
         )
+
 
     return "Complete."
